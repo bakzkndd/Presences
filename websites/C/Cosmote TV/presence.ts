@@ -1,119 +1,208 @@
 const presence = new Presence({
-    clientId: "883446187099840562"
-  }),
-  strings = presence.getStrings({
-    play: "general.playing",
-    pause: "general.paused",
-    live: "general.live",
-    search: "general.searchFor"
-  }),
-  startedTime = Math.floor(Date.now() / 1000);
+	clientId: "883446187099840562",
+});
+
+async function getStrings() {
+	return presence.getStrings(
+		{
+			play: "general.playing",
+			pause: "general.paused",
+			live: "general.live",
+		},
+		await presence.getSetting<string>("lang").catch(() => "en")
+	);
+}
+
+let channel: string,
+	channelTimestamp: number,
+	strings: Awaited<ReturnType<typeof getStrings>>,
+	oldLang: string = null;
 
 presence.on("UpdateData", async () => {
-  const data: PresenceData = {
-    largeImageKey: "tv",
-    startTimestamp: startedTime
-  };
-  if (document.location.href.includes("search")) {
-    data.details = "Searching...";
-    data.smallImageKey = "search";
-    data.smallImageText = (await strings).search;
-  } else if (document.location.href.includes("loginSplash"))
-    data.details = "Viewing login page...";
-  else if (document.location.href.includes("settings"))
-    data.details = "Viewing settings...";
-  else if (document.location.href.includes("channels"))
-    data.details = "Browsing Channels...";
-  else if (document.location.href.includes("privacy"))
-    data.details = "Viewing privacy policy...";
-  else if (document.location.href.includes("livetv/replaytv"))
-    data.details = "Browsing Replay TV...";
-  else if (document.location.href.includes("livetv/guide"))
-    data.details = "Browsing Live TV Guide...";
-  else if (document.location.href.includes("livetv"))
-    data.details = "Browsing Live TV...";
-  else if (document.location.href.includes("onDemand/FILMS"))
-    data.details = "Browsing Films...";
-  else if (document.location.href.includes("onDemand/SERIES"))
-    data.details = "Browsing Series...";
-  else if (document.location.href.includes("onDemand/MOVIES_CLUB"))
-    data.details = "Browsing Movies Club...";
-  else if (document.location.href.includes("onDemand/SPORTS"))
-    data.details = "Browsing Sports...";
-  else if (document.location.href.includes("onDemand/DOCUMENTARIES"))
-    data.details = "Browsing Documentaries...";
-  else if (document.location.href.includes("onDemand/KIDS"))
-    data.details = "Browsing Kids content...";
-  else if (document.location.href.includes("watchlist"))
-    data.details = "Viewing watchlist...";
-  else data.details = "Browsing...";
+	let presenceData: PresenceData = {
+		largeImageKey:
+			"https://cdn.rcd.gg/PreMiD/websites/C/Cosmote%20TV/assets/logo.png",
+	};
 
-  const playerCheck = document.querySelector("div[ng-if='showPlayer']")
-    ? true
-    : false;
+	const pages: Record<string, PresenceData> = {
+			"#!": {
+				details: "Browsing",
+			},
+			search: {
+				details: "Searching",
+				state:
+					document.querySelector<HTMLInputElement>("#searchFieldInput")?.value,
+				smallImageKey: Assets.Search,
+				smallImageText: "Searching",
+			},
+			loginSplash: {
+				details: "Logging In",
+			},
+			channels: {
+				details: "Browsing Channels",
+			},
+			watchlist: {
+				details: "Viewing Watchlist",
+			},
+			settings: {
+				details: "Viewing Settings",
+			},
+			privacy: {
+				details: "Viewing Privacy Policy",
+			},
+			livetv: {
+				details: "Browsing Live TV",
+			},
+			"livetv/replaytv": {
+				details: "Browsing Replay TV",
+			},
+			"livetv/guide": {
+				details: "Browsing Live TV Guide",
+			},
+			"onDemand/FILMS": {
+				details: "Browsing Films",
+			},
+			"onDemand/SERIES": {
+				details: "Browsing Series",
+			},
+			"onDemand/MOVIES_CLUB": {
+				details: "Browsing Movies Club",
+			},
+			"onDemand/SPORTS": {
+				details: "Browsing Sports",
+			},
+			"onDemand/DOCUMENTARIES": {
+				details: "Browsing Documentaries",
+			},
+			"onDemand/KIDS": {
+				details: "Browsing Kids Content",
+			},
+		},
+		[newLang, logo, timestamps] = await Promise.all([
+			presence.getSetting<string>("lang").catch(() => "en"),
+			presence.getSetting<boolean>("logo"),
+			presence.getSetting<boolean>("timestamps"),
+		]);
 
-  if (playerCheck) {
-    const title = document.querySelector(
-        ".meta-title[ng-bind='details.title']"
-      )?.textContent,
-      video: HTMLVideoElement = document.querySelector("video#arxPlayer"),
-      { paused, currentTime, duration } = video,
-      timestamps = presence.getTimestamps(
-        Math.floor(currentTime),
-        Math.floor(duration)
-      ),
-      live = document.querySelector(".meta-remain") ? true : false;
+	for (const [path, data] of Object.entries(pages)) {
+		if (document.location.hash.includes(path))
+			presenceData = { ...presenceData, ...data };
+	}
 
-    if (!live) {
-      data.smallImageKey = paused ? "pause" : "play";
-      data.smallImageText = paused
-        ? (await strings).pause
-        : (await strings).play;
+	if (oldLang !== newLang || !strings) {
+		oldLang = newLang;
+		strings = await getStrings();
+	}
 
-      data.endTimestamp = timestamps.pop();
+	if (document.querySelector<HTMLDivElement>("div[ng-if='showPlayer']")) {
+		const { paused, currentTime, duration } =
+			document.querySelector<HTMLVideoElement>("video#arxPlayer");
+		// TV
+		if (
+			document.querySelector<HTMLImageElement>(
+				"div[ng-if='details.channelLogoWide'] > .wide-logo"
+			)
+		) {
+			presenceData.details = document.querySelector<HTMLSpanElement>(
+				".meta-title[ng-bind='details.title']"
+			)?.textContent;
+			presenceData.state = document.querySelector<HTMLSpanElement>(
+				".meta-title[ng-bind='details.channel.title']"
+			)?.textContent;
+			if (logo) {
+				presenceData.largeImageKey = document
+					.querySelector<HTMLImageElement>(
+						"div[ng-if='details.channelLogoWide'] > .wide-logo"
+					)
+					?.src.replace("-wide", "-normal");
+			}
 
-      const series =
-        document.querySelector("span[ng-bind='details.seriesSubs']").innerHTML
-          .length > 0
-          ? true
-          : false;
+			// Live
+			if (document.querySelector<HTMLSpanElement>(".meta-remain")) {
+				if (channel !== presenceData.state || !channelTimestamp)
+					channelTimestamp = Math.floor(Date.now() / 1000);
 
-      if (series) {
-        data.details = document.querySelector(
-          "span[ng-bind='details.seriesSubs']"
-        ).textContent;
-      } else data.details = title;
-    } else {
-      data.smallImageKey = paused ? "pause" : "live";
-      data.smallImageText = paused
-        ? (await strings).pause
-        : (await strings).live;
+				presenceData.startTimestamp = channelTimestamp;
 
-      const watchTime = Math.floor(Date.now() / 1000);
-      data.startTimestamp = watchTime;
-      data.details = title;
-    }
+				presenceData.smallImageKey = paused ? Assets.Pause : Assets.Live;
+				presenceData.smallImageText = paused ? strings.pause : strings.live;
+			} else {
+				// Replay / Timeshift
+				[presenceData.startTimestamp, presenceData.endTimestamp] =
+					presence.getTimestamps(
+						presence.timestampFromFormat(
+							document.querySelector<HTMLSpanElement>("#VcurrentTime")
+								.textContent
+						),
+						presence.timestampFromFormat(
+							document.querySelector<HTMLSpanElement>("#Vduration").textContent
+						)
+					);
 
-    const channel = document.querySelector(
-      ".meta-title[ng-bind='details.channel.title']"
-    )?.textContent;
+				presenceData.smallImageKey = paused ? Assets.Pause : Assets.Play;
+				presenceData.smallImageText = paused ? strings.pause : strings.play;
+			}
+			channel = presenceData.state;
+		} else {
+			// On Demand
+			presenceData.details = document.querySelector<HTMLSpanElement>(
+				".meta-title[ng-bind='details.title']"
+			).textContent;
+			// Series
+			if (
+				document.querySelector<HTMLSpanElement>(
+					"span[ng-bind='details.seriesSubs']"
+				)?.textContent.length > 0
+			) {
+				const episode = document
+					.querySelector<HTMLSpanElement>("span[ng-bind='details.seriesSubs']")
+					.textContent.split(" / ", 3)
+					.map(str => str.trim());
 
-    if (channel?.length !== 0) {
-      if (!live) data.state = `Watching on ${channel}`;
-      else data.state = `Live on ${channel}`;
+				switch (episode.length) {
+					case 3:
+						if (
+							presenceData.details !== episode[2] &&
+							!episode[2].endsWith(` ${episode[1]}`) &&
+							!episode[2].endsWith(` ${episode[1].replace("Ε", "E")}`)
+						)
+							presenceData.state = `${episode[0]}:${episode[1]} ${episode[2]}`;
+						else {
+							presenceData.state = `${episode[0]
+								.replace("S", "Season ")
+								.replace("Κ", "Κύκλος ")} ${episode[1]
+								.replace("E", "Episode ")
+								.replace("Ε", "Επεισόδιο ")}`;
+						}
+						break;
+					case 2:
+						presenceData.state = episode[0]
+							.replace("E", "Episode ")
+							.replace("Ε", "Επεισόδιο ");
+						if (
+							presenceData.details !== episode[1] &&
+							!episode[1].endsWith(` ${episode[0]}`)
+						)
+							presenceData.state += `: ${episode[1]}`;
+						break;
+					case 1:
+						presenceData.state = episode[0];
+				}
+			}
 
-      const hashCode = channel.split("").reduce(function (a, b) {
-        a = (a << 5) - a + b.charCodeAt(0);
-        return a & a;
-      }, 0);
-      data.largeImageKey = hashCode.toString();
-    }
+			presenceData.endTimestamp = presence
+				.getTimestamps(Math.floor(currentTime), Math.floor(duration))
+				.pop();
 
-    if (paused) {
-      delete data.startTimestamp;
-      delete data.endTimestamp;
-      data.state = "Paused";
-    }
-  }
-  presence.setActivity(data);
+			presenceData.smallImageKey = paused ? Assets.Pause : Assets.Play;
+			presenceData.smallImageText = paused ? strings.pause : strings.play;
+		}
+
+		if (paused || !timestamps) {
+			delete presenceData.startTimestamp;
+			delete presenceData.endTimestamp;
+			channelTimestamp = null;
+		}
+	}
+	presence.setActivity(presenceData);
 });

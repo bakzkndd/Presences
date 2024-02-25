@@ -1,55 +1,82 @@
-const presence: Presence = new Presence({
-  clientId: "876239113307709493"
-});
+const presence = new Presence({
+		clientId: "876239113307709493",
+	}),
+	browsingTimestamp = Math.floor(Date.now() / 1000);
+
+async function getStrings() {
+	return presence.getStrings(
+		{
+			home: "general.viewHome",
+			user: "general.viewUser",
+			call: "general.inCall",
+			reading: "general.readingAbout",
+			browsing: "general.browsing",
+		},
+		await presence.getSetting<string>("lang").catch(() => "en")
+	);
+}
+
+let strings: Awaited<ReturnType<typeof getStrings>>,
+	oldLang: string = null;
 
 presence.on("UpdateData", async () => {
-  const presenceData: PresenceData = {
-    largeImageKey: "lg"
-  };
+	const presenceData: PresenceData = {
+			largeImageKey:
+				"https://cdn.rcd.gg/PreMiD/websites/G/Giggl/assets/logo.jpg",
+		},
+		privacy = await presence.getSetting<boolean>("privacy"),
+		newLang = await presence.getSetting<string>("lang").catch(() => "en"),
+		timestamps = await presence.getSetting<boolean>("time");
 
-  // Presence for Giggl's static landing page
-  if (document.location.hostname === "giggl.app") {
-    switch (document.location.pathname) {
-      case "/":
-        presenceData.details = "Viewing the home page";
-        break;
-      case "/jobs":
-        presenceData.details = "Reading about jobs";
-        break;
-      case "/isp":
-        presenceData.details = "Reading about Giggl Networking";
-        break;
-    }
+	if (oldLang !== newLang || !strings) {
+		oldLang = newLang;
+		strings = await getStrings();
+	}
 
-    // Presence for Giggl itself
-  } else if (document.location.hostname === "canary.giggl.app") {
-    presenceData.details = "Browsing Giggl";
+	switch (document.location.hostname) {
+		case "giggl.app": {
+			switch (document.location.pathname) {
+				case "/":
+					presenceData.details = (await strings).home;
+					break;
+				case "/jobs":
+					presenceData.details = `${(await strings).reading} Jobs`;
+					break;
+				case "/isp":
+					presenceData.details = `${(await strings).reading} Giggl Networking`;
+					break;
+			}
 
-    // If in a portal, set status to that
-    if (document.location.pathname.startsWith("/portal")) {
-      presenceData.details = "In a Portal";
-      [presenceData.state] = document
-        .querySelector("title")
-        .innerText.split(" • ");
-    }
+			break;
+		}
+		case "canary.giggl.app": {
+			presenceData.details = (await strings).browsing;
 
-    // Check if in a call
-    if (document.querySelector("svg.feather.feather-phone-missed")) {
-      presenceData.smallImageKey = "call";
-      presenceData.smallImageText = "In a call";
-    }
+			if (document.location.pathname.startsWith("/portal")) {
+				presenceData.details = "In a Portal";
+				[presenceData.state] = document
+					.querySelector("title")
+					.textContent.split(" • ");
+			} else if (document.querySelector("svg.feather.feather-phone-missed")) {
+				presenceData.smallImageKey = Assets.Call;
+				presenceData.smallImageText = (await strings).call;
+			} else if (document.querySelector(".feather.feather-map-pin")) {
+				presenceData.details = (await strings).user;
+				presenceData.state = document.querySelector("p").textContent;
+			}
 
-    // Check if viewing a profile
-    if (document.querySelector(".feather.feather-map-pin")) {
-      presenceData.details = `Viewing ${
-        document.querySelector("p").textContent
-      }'s Profile`;
-      delete presenceData.state;
-    }
+			break;
+		}
+		case "status.giggl.app":
+			{
+				presenceData.details = "Viewing the status page";
+				// No default
+			}
+			break;
+	}
 
-    // Presence for status page
-  } else if (document.location.hostname === "status.giggl.app")
-    presenceData.details = "Viewing the status page";
+	if (privacy) delete presenceData.state;
+	if (timestamps) presenceData.startTimestamp = browsingTimestamp;
 
-  presence.setActivity(presenceData);
+	presence.setActivity(presenceData);
 });

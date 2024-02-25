@@ -1,49 +1,59 @@
 const presence = new Presence({
-    clientId: "864304063804997702"
-  }),
-  elapsed = Math.floor(Date.now() / 1e3);
+		clientId: "864304063804997702",
+	}),
+	browsingTimestamp = Math.floor(Date.now() / 1000);
 
 presence.on("UpdateData", () => {
-  const { pathname, origin } = window.location,
-    data: PresenceData = {
-      startTimestamp: elapsed,
-      largeImageKey: "logo"
-    };
+	const { pathname, href } = window.location,
+		presenceData: PresenceData = {
+			startTimestamp: browsingTimestamp,
+			largeImageKey:
+				"https://cdn.rcd.gg/PreMiD/websites/A/Asura%20Scans/assets/logo.png",
+		};
 
-  let state, details, buttons: [ButtonData, ButtonData?];
+	if (/^\/(page\/\d+\/?)?$/.test(pathname))
+		presenceData.details = "Viewing Home Page";
+	else if (/^\/manga\/?$/.test(pathname))
+		presenceData.details = "Viewing Comic List";
+	else if (/^\/manga\/[0-9a-z-]+\/?$/i.test(pathname)) {
+		presenceData.details = "Viewing Comic Page";
+		presenceData.state =
+			document.querySelector<HTMLHeadingElement>(".entry-title").textContent;
+		presenceData.buttons = [
+			{
+				label: "Visit Comic Page",
+				url: href,
+			},
+		];
+	} else if (
+		/\/[a-z-\d]+(chapter|ch|bolum)[a-z-\d]*-[0-9]+\/?$/i.test(pathname)
+	) {
+		const progress =
+			(document.documentElement.scrollTop /
+				(document.querySelector<HTMLDivElement>("#readerarea").scrollHeight -
+					window.innerHeight)) *
+			100;
+		presenceData.details = "Reading Comic";
+		presenceData.state = `${
+			document.querySelector<HTMLHeadingElement>(".entry-title").textContent
+		} - ${(progress > 100 ? 100 : progress).toFixed(1)}%`;
+		presenceData.buttons = [
+			{
+				label: "Visit Comic Page",
+				url: document.querySelector<HTMLAnchorElement>(".allc > a").href,
+			},
+			{
+				label: "Visit Chapter",
+				url: href,
+			},
+		];
+	} else if (pathname.startsWith("/bookmark"))
+		presenceData.details = "Viewing Bookmarks";
+	else {
+		presenceData.details = "Browsing Asura Scans";
+		presenceData.state = document.title;
+	}
 
-  if (/^\/$/.test(pathname)) details = "Viewing Home Page";
-  else if (/^\/comics\/?$/.test(pathname)) details = "Viewing Comic List";
-  else if (/^\/comics\/[0-9a-z-]+\/?$/i.test(pathname)) {
-    details = "Viewing Comic Page";
-    state = document.querySelector(".entry-title").textContent;
-    const viewComicButton: ButtonData = {
-      label: "Visit Comic Page",
-      url: origin + pathname
-    };
-    buttons = [viewComicButton];
-  } else if (/\/[a-z-19]+(chapter|ch)-[0-9]+\/?$/i.test(pathname)) {
-    const comicLink = (document.querySelector(".allc > a") as HTMLAnchorElement)
-      .href;
-    details = "Reading Comic";
-    state = document.querySelector(".entry-title").textContent;
-    const viewComicButton: ButtonData = {
-        label: "Visit Comic Page",
-        url: origin + comicLink
-      },
-      visitChapterButton: ButtonData = {
-        label: "Visit Chapter",
-        url: origin + pathname
-      };
-    buttons = [viewComicButton, visitChapterButton];
-  } else {
-    details = "Browsing Asura Scans";
-    state = document.title;
-  }
-
-  data.details = details;
-  data.state = state;
-  data.buttons = buttons;
-
-  if (data.details) presence.setActivity(data);
+	if (presenceData.details) presence.setActivity(presenceData);
+	else presence.setActivity();
 });

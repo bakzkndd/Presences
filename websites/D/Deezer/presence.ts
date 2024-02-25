@@ -1,195 +1,161 @@
-interface LangStrings {
-  play: string;
-  pause: string;
-  viewAlbum: string;
-  viewArtist: string;
-  viewPodcast: string;
+const presence = new Presence({
+	clientId: "607651992567021580",
+});
+
+let oldLang: string = null;
+
+const enum Assets {
+	Logo = "https://cdn.rcd.gg/PreMiD/websites/D/Deezer/assets/logo.png",
 }
 
-const presence = new Presence({
-    clientId: "607651992567021580"
-  }),
-  getStrings = async (): Promise<LangStrings> => {
-    return presence.getStrings(
-      {
-        play: "general.playing",
-        pause: "general.paused",
-        viewAlbum: "general.buttonViewAlbum",
-        viewArtist: "general.buttonViewArtist",
-        viewPodcast: "general.buttonViewPodcast"
-      },
-      await presence.getSetting("lang")
-    );
-  };
+function fullURL(originalURL: string, hostname: string) {
+	if (!originalURL) return "";
+	else if (originalURL?.includes("https")) return originalURL;
+	else if (originalURL.startsWith("/"))
+		return `https://${hostname}${originalURL}`;
+	else return "";
+}
 
-let currentTime,
-  duration,
-  title,
-  artist,
-  episode,
-  albumLink,
-  artistLink,
-  showLink,
-  strings: Promise<LangStrings> = getStrings(),
-  oldLang: string = null;
+async function getStrings() {
+	return presence.getStrings(
+		{
+			play: "general.playing",
+			pause: "general.paused",
+			viewAlbum: "general.buttonViewAlbum",
+			viewArtist: "general.buttonViewArtist",
+			viewPodcast: "general.buttonViewPodcast",
+		},
+		await presence.getSetting<string>("lang").catch(() => "en")
+	);
+}
 
 presence.on("UpdateData", async () => {
-  const player = document.querySelector(".page-player"),
-    presenceData: PresenceData = {
-      largeImageKey: "logo"
-    },
-    buttons = await presence.getSetting("buttons"),
-    newLang = await presence.getSetting("lang");
+	let presenceData: PresenceData = {
+			largeImageKey: Assets.Logo,
+		},
+		strings = await getStrings(),
+		paused = false;
 
-  if (!oldLang) oldLang = newLang;
-  else if (oldLang !== newLang) {
-    oldLang = newLang;
-    strings = getStrings();
-  }
+	const [buttons, newLang, cover, browseInfo] = await Promise.all([
+			presence.getSetting<boolean>("buttons"),
+			presence.getSetting<string>("lang").catch(() => "en"),
+			presence.getSetting<boolean>("cover"),
+			presence.getSetting<boolean>("browseInfo"),
+		]),
+		{ pathname, hostname } = document.location,
+		remainingTest = document.querySelector(
+			'[data-testid="remaining_time"]'
+		)?.textContent;
 
-  if (player) {
-    artistLink = document.querySelector("div.marquee-content")
-      .children[1] as HTMLAnchorElement;
-    albumLink = document.querySelector("div.marquee-content")
-      .children[0] as HTMLAnchorElement;
+	if (oldLang !== newLang || !oldLang) {
+		oldLang = newLang;
+		strings = await getStrings();
+	}
 
-    const paused2 = document.querySelector(
-      "#page_player > div > div.player-controls > ul > li:nth-child(3) > button > svg > g > path"
-    ).outerHTML;
-    let paused: boolean;
-    if (paused2 === '<path d="m5 2 18 10L5 22V2z"></path>') paused = true;
-    else paused = false;
+	const pages: Record<string, PresenceData> = {
+		shows: {
+			details: "Browsing shows",
+		},
+		channels: {
+			details: "Browsing channels",
+		},
+		loved: {
+			details: "Browsing user's loved",
+		},
+		playlists: {
+			details: "Browsing user's playlists",
+		},
+		albums: {
+			details: "Browsing user's albums",
+		},
+		artists: {
+			details: "Browsing user's artists",
+		},
+		podcasts: {
+			details: "Browsing user's podcasts",
+		},
+		show: {
+			details: "Viewing a podcast",
+		},
+		playlist: {
+			details: "Looking at a playlist",
+		},
+		album: {
+			details: "Looking at an album",
+		},
+		artist: {
+			details: "Looking at an artist",
+		},
+	};
+	for (const [path, data] of Object.entries(pages)) {
+		if (pathname.includes(path)) {
+			presenceData = { ...presenceData, ...data };
+			if (browseInfo || !remainingTest || remainingTest === "00:00")
+				return presence.setActivity(presenceData);
+		}
+	}
 
-    currentTime = document.querySelector(
-      "div.player-track > div.track-container > div.track-seekbar > div.slider.slider-autohide > div.slider-counter.slider-counter-current"
-    ).textContent;
-    duration = document.querySelector(
-      "div.player-track > div.track-container > div.track-seekbar > div.slider.slider-autohide > div.slider-counter.slider-counter-max"
-    ).textContent;
+	const albumLink = document
+			.querySelector('[data-testid="item_title"] > a')
+			?.getAttribute("href"),
+		artistLink = document
+			.querySelector('[data-testid="item_subtitle"] > a')
+			?.getAttribute("href"),
+		timestamps = presence.getTimestamps(
+			presence.timestampFromFormat(
+				document.querySelector('[data-testid="elapsed_time"]').textContent
+			),
+			presence.timestampFromFormat(
+				document.querySelector('[data-testid="remaining_time"]').textContent
+			)
+		);
 
-    const timestamps = presence.getTimestamps(
-        presence.timestampFromFormat(currentTime),
-        presence.timestampFromFormat(duration)
-      ),
-      show =
-        document.querySelector(".track-link:nth-child(2)") === null
-          ? true
-          : false;
+	if (document.querySelector('[data-testid="play_button_play"]')) paused = true;
 
-    if (!show) {
-      title = document.querySelector(".track-link:nth-child(1)").textContent;
-      artist = document.querySelector(".track-link:nth-child(2)").textContent;
-      presenceData.details = title;
-      presenceData.state = artist;
-      presenceData.largeImageKey = "deezer";
-      presenceData.smallImageKey = paused ? "pause" : "play";
-      presenceData.smallImageText = paused
-        ? (await strings).pause
-        : (await strings).play;
-      presenceData.startTimestamp = timestamps[0];
-      presenceData.endTimestamp = timestamps[1];
+	presenceData.details = document.querySelector(
+		'[data-testid="item_title"]'
+	).textContent;
+	presenceData.state = document.querySelector(
+		'[data-testid="item_subtitle"]'
+	).textContent;
 
-      if (buttons) {
-        presenceData.buttons = [
-          {
-            label: (await strings).viewArtist,
-            url: artistLink.href
-          },
-          {
-            label: (await strings).viewAlbum,
-            url: albumLink.href
-          }
-        ];
-      }
+	presenceData.largeImageKey = cover
+		? document
+				.querySelector('[data-testid="item_cover"]')
+				?.querySelector("img")
+				?.getAttribute("src")
+				?.replace(/(264x264)|(48x48)/g, "512x512") ?? Assets.Logo
+		: Assets.Logo;
+	presenceData.smallImageKey = paused ? Assets.Pause : Assets.Play;
+	presenceData.smallImageText = paused ? strings.pause : strings.play;
+	[presenceData.startTimestamp, presenceData.endTimestamp] = timestamps;
 
-      if (paused) {
-        delete presenceData.startTimestamp;
-        delete presenceData.endTimestamp;
-      }
+	if (paused) {
+		delete presenceData.startTimestamp;
+		delete presenceData.endTimestamp;
+	}
 
-      presence.setActivity(presenceData, !paused);
-    } else {
-      title = document
-        .querySelector("div.marquee-content")
-        .textContent.split(" · ")[1];
-      episode = document
-        .querySelector("div.marquee-content")
-        .textContent.split(" · ")[0];
-      showLink = albumLink = document.querySelector("div.marquee-content")
-        .children[0] as HTMLAnchorElement;
-      presenceData.details = title;
-      presenceData.state = episode;
-      presenceData.largeImageKey = "deezer";
-      presenceData.smallImageKey = paused ? "pause" : "play";
-      presenceData.smallImageText = paused
-        ? (await strings).pause
-        : (await strings).play;
-      presenceData.startTimestamp = timestamps[0];
-      presenceData.endTimestamp = timestamps[1];
+	if (buttons) {
+		if (albumLink?.includes("/")) {
+			presenceData.buttons = [
+				{
+					label: strings.viewArtist,
+					url: fullURL(artistLink, hostname),
+				},
+				{
+					label: strings.viewAlbum,
+					url: fullURL(albumLink, hostname),
+				},
+			];
+		} else {
+			presenceData.buttons = [
+				{
+					label: strings.viewPodcast,
+					url: fullURL(artistLink, hostname),
+				},
+			];
+		}
+	}
 
-      if (showLink) {
-        if (buttons) {
-          presenceData.buttons = [
-            {
-              label: (await strings).viewPodcast,
-              url: showLink.href
-            }
-          ];
-        }
-      } else {
-        if (buttons) {
-          presenceData.buttons = [
-            {
-              label: (await strings).play,
-              url: "https://support.deezer.com/hc/en-gb/articles/115004221605-Uploading-MP3s-to-Deezer"
-            }
-          ];
-        }
-      }
-      if (paused) {
-        delete presenceData.startTimestamp;
-        delete presenceData.endTimestamp;
-      }
-
-      presence.setActivity(presenceData, !paused);
-    }
-  } else {
-    const { pathname } = document.location,
-      presenceData: PresenceData = {
-        largeImageKey: "deezer"
-      };
-    if (pathname.includes("shows")) {
-      presenceData.details = "Browsing...";
-      presenceData.state = "Shows";
-    } else if (pathname.includes("channels")) {
-      presenceData.details = "Browsing...";
-      presenceData.state = "Channels";
-    } else if (pathname.includes("loved")) {
-      presenceData.details = "Browsing...";
-      presenceData.state = "User's Loved";
-    } else if (pathname.includes("playlists")) {
-      presenceData.details = "Browsing...";
-      presenceData.state = "User's Playlists";
-    } else if (pathname.includes("albums")) {
-      presenceData.details = "Browsing...";
-      presenceData.state = "User's Albums";
-    } else if (pathname.includes("artists")) {
-      presenceData.details = "Browsing...";
-      presenceData.state = "User's Artists";
-    } else if (pathname.includes("podcasts")) {
-      presenceData.details = "Browsing...";
-      presenceData.state = "User's Podcasts";
-    } else if (pathname.includes("playlist")) {
-      presenceData.details = "Looking at...";
-      presenceData.state = "A Playlist";
-    } else if (pathname.includes("album")) {
-      presenceData.details = "Looking at...";
-      presenceData.state = "An Album";
-    } else if (pathname.includes("artist")) {
-      presenceData.details = "Looking at...";
-      presenceData.state = "An Artist";
-    } else presenceData.details = "Browsing...";
-
-    presence.setActivity(presenceData);
-  }
+	presence.setActivity(presenceData);
 });
